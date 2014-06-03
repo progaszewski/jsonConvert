@@ -3,11 +3,12 @@ package jvminternals.labs;
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 
 public class JsonConverter implements JsonConverterInterface {
 
-	final String TAB = "\t";
-	
+	final String TAB = "   ";
+
 	@Override
 	public <T> String toJson(T obj) throws JsonConverterException {
 		int deep = 0;
@@ -27,19 +28,88 @@ public class JsonConverter implements JsonConverterInterface {
 			throw new JsonConverterException(e);
 		}
 	}
-	
+
 	private <T> String generateJson(T obj, int deep) throws JsonConverterException{
-		String json = "", objType;
-		
+		String json = "", objType = "";
+
+
+
+
 		if (obj == null) {
 			throw new JsonConverterException("null object converion");
 		}
+/*
+		for (Field f : obj.getClass().getFields()){
+			try {
+				System.out.print(f.getName() + ": ");
+				Object o = f.get(obj);
+				if(o != null){
+					System.out.println(o.getClass().getName());
+				}else{
+					System.out.println(f.getType());
+				}
+			} catch (IllegalArgumentException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IllegalAccessException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+
+*/
 		json += getTabs(deep++) + "{\n";
 		json += getTabs(deep++) + obj.getClass().getSimpleName() + ": {\n";
 
-		for (Field f : obj.getClass().getFields()) {
+		ArrayList<Field> privateFields = new ArrayList<Field>();
+		ArrayList<Field> publicFields = new ArrayList<Field>();
+
+		//Podział na pola prywatne i publiczne
+		for(Field f :obj.getClass().getDeclaredFields()){
 			
+				try {
+					f.get(obj);
+					publicFields.add(f);
+				} catch (IllegalArgumentException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IllegalAccessException e) {
+					f.setAccessible(true);
+					privateFields.add(f);
+				}
 			
+		}
+
+
+		//tworzenie jsona dla pol prywatnych
+		if(privateFields.size() != 0) {
+			json += getTabs(deep++) + "private: {\n";
+
+			json = generate(privateFields, json, deep, objType, obj);
+
+			json += getTabs(--deep) + "}\n";
+		}
+
+
+		//tworzenie jsona dla pol publicznych
+		if(publicFields.size() != 0) {
+			json += getTabs(deep++) + "public: {\n";
+
+			json = generate(publicFields, json, deep, objType, obj);
+
+			json += getTabs(--deep) + "}\n";
+
+		}
+
+		json += getTabs(--deep) + "}\n";
+		json += getTabs(--deep) + "}\n";
+
+		return json;
+	}
+
+	//prasowanie pol do formatu jsona
+	private <T> String generate(ArrayList<Field> fields, String json, int deep, String objType, T obj) throws JsonConverterException{
+		for (Field f : fields){
 			try {
 				json += getTabs(deep) + "\"" + f.getName() + "\": ";
 				//json += f.get(obj);
@@ -55,17 +125,15 @@ public class JsonConverter implements JsonConverterInterface {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			} 
+
 		}
 		if(json.charAt(json.length() - 2) == ','){
 			json = json.substring(0, json.length() - 2) + "\n";
 		}
-		
-		json += getTabs(--deep) + "}\n";
-		json += getTabs(--deep) + "}\n";
-		
+
 		return json;
 	}
-	
+	//Rysowanie tabulacji
 	private String getTabs(int c){
 		String tabs = "";
 		for(int i = 0; i < c; i++){
@@ -73,12 +141,12 @@ public class JsonConverter implements JsonConverterInterface {
 		}
 		return tabs;
 	}
-	
+	//podstawowe typy pol
 	private <T> String getValOfField(Field f, T obj) throws IllegalArgumentException, IllegalAccessException{
 		Object fType = f.getType();
-		
 
-		
+
+
 		switch(fType.toString()){
 		case "int": return f.getInt(obj) + "";
 		case "boolean" : return f.getBoolean(obj) + "";
@@ -87,17 +155,17 @@ public class JsonConverter implements JsonConverterInterface {
 		case "short": return "(short)" + f.getShort(obj);
 		case "byte": return "(byte)" + f.getByte(obj);
 		case "long": return f.getLong(obj) + "l";
-		
+
 		//default: return f.get(obj) + " (type: " + fType.toString() + " )";
 		default : return getObjectVal(f, obj);
 		}
-		
+
 		//return fType + "";
 	}
-	
+	//Podstawowe klasy
 	private <T> String getObjectVal(Field f, T obj) throws IllegalArgumentException, IllegalAccessException{
 		Object object = f.get(obj);
-		
+
 		if(object == null){
 			Object type = f.getType();
 			return "null (" + type.toString().split(" ")[1] + ")";
@@ -110,7 +178,7 @@ public class JsonConverter implements JsonConverterInterface {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-		
+		 
 		switch(object.getClass().getName()){
 		case "java.lang.String": return "\"" + object.toString() + "\"";
 		case "java.lang.Integer": return object.toString() + " (Integer)";
@@ -124,14 +192,20 @@ public class JsonConverter implements JsonConverterInterface {
 		//case "[D": return getArray(f, obj, "[D");
 		//case "[F": return getArray(f, obj, "[F");
 		//case "[Z": return getArray(f, obj, "[Z");
+
+		default: 
+			if(f.getType().toString().split(" ")[1].matches("java.util.*List")){
+				return object.toString() + " (" + f.getType().toString().split("\\.")[2] + ")";
+			}
 		}
-		
+
 		return "$$$object$$$";
 	}
-	
+
+	//Parsowanie tablic podstawowych
 	private String getArray(Object object, String className) throws ClassNotFoundException {
 		String prefix = "", sufix = "";
-		
+
 		//System.out.println("\n\n\n!!!!! " + object.getClass().getName());
 		switch(className){
 		case "[D": sufix = "d"; break;
@@ -146,7 +220,7 @@ public class JsonConverter implements JsonConverterInterface {
 		case "[Ljava.lang.Byte;": prefix = "(Byte)"; break;
 		case "[Ljava.lang.Short;": prefix = "(Short)"; break;
 		}
-		
+
 		String arrayString = "[";
 		if(Array.getLength(object) != 0){
 			for(int i = 0; i < Array.getLength(object) - 1; i++){
@@ -154,13 +228,13 @@ public class JsonConverter implements JsonConverterInterface {
 			}
 			arrayString += prefix + Array.get(object, Array.getLength(object) - 1) + sufix; 
 		}
-		
+
 		arrayString += "]";
 		return arrayString;
-		
-		
-		
+
+
+
 		//return "";
 	}
-	
+
 }

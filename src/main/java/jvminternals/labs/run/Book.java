@@ -11,7 +11,7 @@ public class Book {
 	public int id;
 	public float f;
 	public double d;
-	public long l = 4L;
+	private long l = 4L;
 	public short s = (short)0;
 	public byte by = (byte)0;
 	public Byte cBy;
